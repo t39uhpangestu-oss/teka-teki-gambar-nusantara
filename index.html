@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Teka-Teki Gambar Nusantara</title>
+  <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#05060f">
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; background:#05060f; color:#fff; font-family:system-ui, sans-serif; }
+  #bg { position:fixed; left:0; top:0; width:100%; height:100%; z-index:0; }
+  #app { position:relative; z-index:1; height:100%; overflow-y:auto; display:flex; flex-direction:column; align-items:center; padding:48px 10px 28px; }
+  #btnMusik { position:fixed; top:8px; right:8px; z-index:5; padding:8px 12px; font-size:18px; }
+  .kartu { width:min(94vw,440px); background:rgba(6,22,32,.86); border-radius:16px; padding:14px; margin:6px 0; }
+  h1 { font-size:21px; margin:6px 0 10px; color:#ffd166; text-align:center; }
+  h2 { font-size:16px; margin:12px 0 6px; color:#8ff0e6; }
+  p { margin:6px 0; line-height:1.5; font-size:15px; }
+  .kecil { font-size:13px; color:#bcd6e0; }
+  .papan { background:#c9efc9; border-radius:14px; min-height:160px; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; padding:16px 10px; }
+  .emo { font-size:64px; line-height:1.1; }
+  .huruf { font-size:58px; font-weight:900; color:#ffd700; text-shadow:0 3px 0 #a07c00; }
+  .teks { font-size:20px; font-weight:700; color:#173b2a; background:#fff; border-radius:10px; padding:6px 10px; }
+  .baris { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:10px; }
+  input { width:100%; padding:12px 14px; font-size:18px; border-radius:10px; border:none; margin-top:12px; outline:none; }
+  button { padding:11px 16px; border:none; border-radius:10px; background:#1fb5a8; color:#fff; font-size:16px; font-weight:700; }
+  button.sekunder { background:#2d3e55; }
+  button.ungu { background:#7b4fd6; }
+  button:disabled { background:#2a2a3a; color:#777; }
+  #pesan { min-height:24px; margin-top:8px; text-align:center; font-weight:700; }
+  .benar { color:#7cfc98; }
+  .salah { color:#ff9b9b; }
+  .kisi { background:rgba(224,168,0,.16); border:1px dashed #e0a800; border-radius:10px; padding:10px 12px; margin-top:10px; font-size:15px; line-height:1.6; }
+  .pola { font-size:22px; font-weight:800; letter-spacing:2px; color:#ffd700; }
+  #grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-top:10px; }
+  #grid button { padding:10px 0; font-size:14px; }
+  .sentuh { font-size:15px; color:#ffd166; margin-top:12px; text-align:center; }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<button id="btnMusik" class="sekunder">🔊</button>
+<div id="app"></div>
+
+<script>
+// ===== PENGATURAN =====
+const MAKS_SESI = 500;
+const GRATIS = 150;
+const HARGA = 'Rp5.000';
+const SOAL_PER_SESI = 5;
+const BATAS_KISI = 5;   // setiap 5 kali salah, satu huruf jawaban terbuka
+
+// ===== PENYIMPANAN (dibungkus try agar aman jika diblokir) =====
+function simpan(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function ambil(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+
+// ===== ACAK YANG BISA DIULANG =====
+function rng(benih) {
+  let s = (benih >>> 0) || 1;
+  return function () {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function kocok(arr, r) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1));
+    const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+  }
+  return a;
+}
+
+// ===== BANK SOAL: campuran gambar dan tulisan =====
+// p   : susunan elemen. e = gambar (emoji), t = tulisan atau huruf.
+//       Huruf satu karakter tampil besar berwarna kuning, tulisan lain tampil sebagai label.
+// ans : jawaban yang diterima. ans[0] dipakai untuk kisi-kisi. Jawaban pertama harus unik.
+// kat : kategori, ditampilkan di kisi-kisi.
+const SOAL = [
+  // Langit dan waktu
+  { kat:'Langit', p:[{e:'☀️'}], ans:['matahari','mentari'] },
+  { kat:'Langit', p:[{e:'👁️'},{t:'hari'}], ans:['mata hari'] },
+  { kat:'Langit', p:[{e:'🌅'}], ans:['matahari terbit'] },
+  { kat:'Langit', p:[{e:'🌇'}], ans:['matahari terbenam'] },
+  { kat:'Langit', p:[{e:'🌕'}], ans:['bulan purnama'] },
+  { kat:'Langit', p:[{t:'cahaya'},{e:'🌙'}], ans:['cahaya bulan'] },
+  { kat:'Langit', p:[{e:'🌙'}], ans:['bulan'] },
+  { kat:'Langit', p:[{e:'⭐'},{t:'laut'}], ans:['bintang laut'] },
+  { kat:'Langit', p:[{e:'⭐'},{t:'jatuh'}], ans:['bintang jatuh'] },
+  { kat:'Langit', p:[{e:'⭐'}], ans:['bintang'] },
+  { kat:'Langit', p:[{e:'🌌'}], ans:['galaksi','bima sakti'] },
+  { kat:'Langit', p:[{e:'🌃'}], ans:['malam'] },
+  { kat:'Langit', p:[{e:'🌤️'}], ans:['siang'] },
+  { kat:'Langit', p:[{t:'selamat'},{e:'🌙'},{t:'malam'}], ans:['selamat malam'] },
+  { kat:'Langit', p:[{e:'7️⃣'},{t:'hari'}], ans:['tujuh hari'] },
+  { kat:'Langit', p:[{e:'🪐'}], ans:['planet'] },
+  { kat:'Langit', p:[{e:'☁️'}], ans:['awan'] },
+  { kat:'Langit', p:[{e:'🌧️'}], ans:['hujan'] },
+  { kat:'Langit', p:[{e:'⚡'}], ans:['petir'] },
+  { kat:'Langit', p:[{e:'🌈'}], ans:['pelangi'] },
+  { kat:'Langit', p:[{e:'❄️'}], ans:['salju'] },
+  { kat:'Langit', p:[{e:'🌍'}], ans:['bumi'] },
+  { kat:'Angka', p:[{e:'2️⃣'},{e:'2️⃣'}], ans:['22','dua puluh dua'] },
+
+  // Tumbuhan
+  { kat:'Tumbuhan', p:[{e:'🍃'},{t:'B'},{e:'🐓'}], ans:['daun bayam'] },
+  { kat:'Tumbuhan', p:[{e:'🍃'},{t:'teh'}], ans:['daun teh'] },
+  { kat:'Tumbuhan', p:[{e:'🌳'}], ans:['pohon'] },
+  { kat:'Tumbuhan', p:[{e:'🌸'}], ans:['bunga'] },
+  { kat:'Tumbuhan', p:[{e:'🌴'}], ans:['pohon kelapa','kelapa'] },
+  { kat:'Tumbuhan', p:[{e:'🌽'}], ans:['jagung'] },
+  { kat:'Tumbuhan', p:[{e:'🍄'}], ans:['jamur'] },
+  { kat:'Tumbuhan', p:[{e:'🌵'}], ans:['kaktus'] },
+  { kat:'Tumbuhan', p:[{e:'🍌'}], ans:['pisang'] },
+  { kat:'Tumbuhan', p:[{e:'🌾'}], ans:['padi'] },
+  { kat:'Tumbuhan', p:[{e:'🌱'}], ans:['tunas'] },
+  { kat:'Tumbuhan', p:[{e:'🥕'}], ans:['wortel'] },
+  { kat:'Tumbuhan', p:[{e:'🍅'}], ans:['tomat'] },
+  { kat:'Tumbuhan', p:[{e:'🍊'}], ans:['jeruk'] },
+
+  // Anak
+  { kat:'Anak', p:[{e:'🧒'}], ans:['anak'] },
+  { kat:'Anak', p:[{e:'🧒'},{t:'kecil'}], ans:['anak kecil'] },
+  { kat:'Anak', p:[{e:'👶'}], ans:['bayi'] },
+  { kat:'Anak', p:[{e:'👦'}], ans:['anak laki laki','anak laki-laki'] },
+  { kat:'Anak', p:[{e:'👧'}], ans:['anak perempuan'] },
+  { kat:'Anak', p:[{e:'👁️'},{t:'paku'}], ans:['mata paku'] },
+  { kat:'Anak', p:[{e:'🧸'}], ans:['boneka'] },
+  { kat:'Anak', p:[{e:'🪁'}], ans:['layang-layang','layang layang'] },
+  { kat:'Anak', p:[{e:'⚽'}], ans:['bola'] },
+  { kat:'Anak', p:[{e:'🧩'}], ans:['puzzle','teka teki'] },
+  { kat:'Anak', p:[{e:'🍼'}], ans:['botol susu','dot'] },
+
+  // Sepeda dan roda
+  { kat:'Sepeda', p:[{e:'🚲'}], ans:['sepeda'] },
+  { kat:'Sepeda', p:[{e:'🚲'},{t:'merah'}], ans:['sepeda merah'] },
+  { kat:'Roda', p:[{e:'🛞'}], ans:['roda','ban'] },
+  { kat:'Roda', p:[{t:'dua'},{e:'🛞'}], ans:['dua roda'] },
+  { kat:'Roda', p:[{e:'🛞'},{t:'sepeda'}], ans:['roda sepeda'] },
+  { kat:'Sepeda', p:[{e:'🛴'}], ans:['skuter'] },
+  { kat:'Sepeda', p:[{e:'🏍️'}], ans:['motor','sepeda motor'] },
+
+  // Kendaraan
+  { kat:'Kendaraan', p:[{e:'🚗'}], ans:['mobil'] },
+  { kat:'Kendaraan', p:[{e:'🚗'},{t:'balap'}], ans:['mobil balap'] },
+  { kat:'Kendaraan', p:[{e:'🚌'}], ans:['bus'] },
+  { kat:'Kendaraan', p:[{e:'🚌'},{t:'sekolah'}], ans:['bus sekolah'] },
+  { kat:'Kendaraan', p:[{e:'🚆'}], ans:['kereta','kereta api'] },
+  { kat:'Kendaraan', p:[{e:'✈️'}], ans:['pesawat'] },
+  { kat:'Kendaraan', p:[{e:'✈️'},{t:'kertas'}], ans:['pesawat kertas'] },
+  { kat:'Kendaraan', p:[{e:'🚢'}], ans:['kapal'] },
+  { kat:'Kendaraan', p:[{e:'🚁'}], ans:['helikopter'] },
+  { kat:'Kendaraan', p:[{e:'🚜'}], ans:['traktor'] },
+  { kat:'Kendaraan', p:[{e:'🚑'}], ans:['ambulans'] },
+  { kat:'Kendaraan', p:[{e:'🚀'}], ans:['roket'] },
+
+  // Pakaian
+  { kat:'Pakaian', p:[{e:'👕'}], ans:['kaos','baju kaos'] },
+  { kat:'Pakaian', p:[{e:'👖'}], ans:['celana'] },
+  { kat:'Pakaian', p:[{e:'🧢'}], ans:['topi'] },
+  { kat:'Pakaian', p:[{e:'🧢'},{t:'merah'}], ans:['topi merah'] },
+  { kat:'Pakaian', p:[{e:'👗'}], ans:['gaun'] },
+  { kat:'Pakaian', p:[{e:'👟'}], ans:['sepatu'] },
+  { kat:'Pakaian', p:[{e:'👟'},{t:'lari'}], ans:['sepatu lari'] },
+  { kat:'Pakaian', p:[{e:'🧣'}], ans:['syal'] },
+  { kat:'Pakaian', p:[{e:'🧥'}], ans:['jaket'] },
+  { kat:'Pakaian', p:[{e:'🧤'}], ans:['sarung tangan'] },
+  { kat:'Pakaian', p:[{e:'🧦'}], ans:['kaos kaki'] },
+
+  // Hewan
+  { kat:'Hewan', p:[{e:'🐓'}], ans:['ayam'] },
+  { kat:'Hewan', p:[{e:'🐄'},{t:'susu'}], ans:['susu sapi'] },
+  { kat:'Hewan', p:[{e:'🐟'}], ans:['ikan'] },
+  { kat:'Hewan', p:[{e:'🐈'}], ans:['kucing'] },
+  { kat:'Hewan', p:[{e:'🐕'}], ans:['anjing'] },
+  { kat:'Hewan', p:[{e:'🐇'}], ans:['kelinci'] },
+  { kat:'Hewan', p:[{e:'🐘'}], ans:['gajah'] },
+  { kat:'Hewan', p:[{e:'🐢'}], ans:['kura-kura','kura kura'] },
+  { kat:'Hewan', p:[{e:'🦆'}], ans:['bebek'] },
+  { kat:'Hewan', p:[{e:'🐒'}], ans:['monyet'] },
+
+  // Makanan
+  { kat:'Makanan', p:[{e:'🍚'}], ans:['nasi'] },
+  { kat:'Makanan', p:[{e:'🍚'},{t:'putih'}], ans:['nasi putih'] },
+  { kat:'Makanan', p:[{e:'🍞'}], ans:['roti'] },
+  { kat:'Makanan', p:[{e:'🍜'}], ans:['mie','mi'] },
+  { kat:'Makanan', p:[{e:'🍗'},{t:'goreng'}], ans:['ayam goreng'] },
+  { kat:'Makanan', p:[{e:'🥚'}], ans:['telur'] },
+  { kat:'Makanan', p:[{e:'🍠'}], ans:['ubi'] },
+  { kat:'Makanan', p:[{e:'🥜'}], ans:['kacang'] },
+  { kat:'Makanan', p:[{e:'🍉'}], ans:['semangka'] },
+  { kat:'Makanan', p:[{e:'🍪'}], ans:['kue'] },
+
+  // Tambahan campuran gambar dan tulisan
+  { kat:'Langit', p:[{e:'🌧️'},{t:'deras'}], ans:['hujan deras'] },
+  { kat:'Langit', p:[{e:'☀️'},{t:'pagi'}], ans:['matahari pagi'] },
+  { kat:'Langit', p:[{t:'malam'},{e:'⭐'}], ans:['malam berbintang'] },
+  { kat:'Langit', p:[{e:'🌞'},{t:'panas'}], ans:['matahari panas'] },
+  { kat:'Tumbuhan', p:[{e:'🌳'},{t:'besar'}], ans:['pohon besar'] },
+  { kat:'Tumbuhan', p:[{e:'🌸'},{t:'merah'}], ans:['bunga merah'] },
+  { kat:'Tumbuhan', p:[{e:'🍃'},{t:'kering'}], ans:['daun kering'] },
+  { kat:'Tumbuhan', p:[{e:'🍃'},{t:'jati'}], ans:['daun jati'] },
+  { kat:'Tumbuhan', p:[{e:'🌽'},{t:'manis'}], ans:['jagung manis'] },
+  { kat:'Tumbuhan', p:[{e:'🌴'},{t:'pantai'}], ans:['pohon pantai'] },
+  { kat:'Anak', p:[{e:'🧒'},{t:'sekolah'}], ans:['anak sekolah'] },
+  { kat:'Anak', p:[{e:'👧'},{t:'cantik'}], ans:['anak cantik'] },
+  { kat:'Anak', p:[{e:'🧸'},{t:'beruang'}], ans:['boneka beruang'] },
+  { kat:'Anak', p:[{e:'⚽'},{t:'kaki'}], ans:['bola kaki'] },
+  { kat:'Sepeda', p:[{e:'🚲'},{t:'listrik'}], ans:['sepeda listrik'] },
+  { kat:'Roda', p:[{t:'tiga'},{e:'🛞'}], ans:['tiga roda'] },
+  { kat:'Roda', p:[{e:'🛞'},{t:'besi'}], ans:['roda besi'] },
+  { kat:'Kendaraan', p:[{e:'🚗'},{t:'merah'}], ans:['mobil merah'] },
+  { kat:'Kendaraan', p:[{e:'🚌'},{t:'kota'}], ans:['bus kota'] },
+  { kat:'Kendaraan', p:[{e:'🚆'},{t:'listrik'}], ans:['kereta listrik'] },
+  { kat:'Pakaian', p:[{e:'👕'},{t:'putih'}], ans:['kaos putih'] },
+  { kat:'Pakaian', p:[{e:'👖'},{t:'jeans'}], ans:['celana jeans'] },
+  { kat:'Pakaian', p:[{e:'👗'},{t:'pengantin'}], ans:['gaun pengantin'] },
+  { kat:'Pakaian', p:[{e:'🧥'},{t:'kulit'}], ans:['jaket kulit'] },
+  { kat:'Pakaian', p:[{e:'🧣'},{t:'wol'}], ans:['syal wol'] },
+  { kat:'Pakaian', p:[{e:'👟'},{t:'bola'}], ans:['sepatu bola'] },
+  { kat:'Hewan', p:[{e:'🐓'},{t:'jago'}], ans:['ayam jago'] },
+  { kat:'Hewan', p:[{e:'🐟'},{t:'mas'}], ans:['ikan mas'] },
+  { kat:'Hewan', p:[{e:'🐈'},{t:'hitam'}], ans:['kucing hitam'] },
+  { kat:'Hewan', p:[{e:'🐕'},{t:'polisi'}], ans:['anjing polisi'] },
+  { kat:'Hewan', p:[{e:'🐘'},{t:'putih'}], ans:['gajah putih'] },
+  { kat:'Hewan', p:[{e:'🦆'},{t:'karet'}], ans:['bebek karet'] },
+  { kat:'Makanan', p:[{e:'🍚'},{t:'goreng'}], ans:['nasi goreng'] },
+  { kat:'Makanan', p:[{e:'🍞'},{t:'bakar'}], ans:['roti bakar'] },
+  { kat:'Makanan', p:[{e:'🥚'},{t:'rebus'}], ans:['telur rebus'] },
+  { kat:'Makanan', p:[{e:'🥜'},{t:'goreng'}], ans:['kacang goreng'] },
+  { kat:'Makanan', p:[{e:'🍪'},{t:'coklat'}], ans:['kue coklat'] },
+  { kat:'Makanan', p:[{e:'🍠'},{t:'bakar'}], ans:['ubi bakar'] },
+];
+
+// ===== NORMALISASI JAWABAN =====
+function norm(s) {
+  return s.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function cocok(tebakan, jawaban) {
+  const t = norm(tebakan), a = norm(jawaban);
+  return t !== '' && (t === a || t.replace(/ /g, '') === a.replace(/ /g, ''));
+}
+
+// Lima soal untuk satu sesi, diambil dengan benih sesi (sama setiap kali dibuka)
+function pilihSoal(n) {
+  const acak = kocok(SOAL, rng(n * 7919 + 13));
+  const hasil = [];
+  const sudah = new Set();
+  for (const s of acak) {
+    const kunci = norm(s.ans[0]);
+    if (sudah.has(kunci)) continue;
+    sudah.add(kunci);
+    hasil.push(s);
+    if (hasil.length === SOAL_PER_SESI) break;
+  }
+  return hasil;
+}
+
+// ===== KISI-KISI BERTAHAP =====
+// Setiap BATAS_KISI kali salah, satu huruf lagi terbuka (dari kiri ke kanan).
+function polaKisi(soal, jumlahSalah) {
+  const kata = soal.ans[0].split(' ');
+  const totalHuruf = kata.join('').length;
+  const terbuka = Math.min(Math.floor(jumlahSalah / BATAS_KISI), totalHuruf);
+  let urut = 0;
+  const pola = kata.map(k =>
+    Array.from(k).map(ch => {
+      const hasil = urut < terbuka ? ch.toUpperCase() : '_';
+      urut++;
+      return hasil;
+    }).join(' ')
+  ).join('   ');
+  return {
+    kat: soal.kat,
+    jumlahKata: kata.length,
+    panjang: kata.map(k => k.length + ' huruf').join(', '),
+    totalHuruf,
+    terbuka,
+    pola
+  };
+}
+
+// ===== TAMPILAN SUSUNAN GAMBAR DAN TULISAN =====
+function render(p) {
+  return p.map(t => {
+    if (t.e) return `<span class="emo">${t.e}</span>`;
+    if (t.t.length === 1) return `<span class="huruf">${t.t.toUpperCase()}</span>`;
+    return `<span class="teks">${t.t}</span>`;
+  }).join('');
+}
+
+// ===== LATAR LUAR ANGKASA =====
+const cv = document.getElementById('bg');
+const gx = cv.getContext('2d');
+const NAMA_PLANET = ['Merkurius','Venus','Mars','Jupiter','Saturnus','Uranus','Neptunus','Pluto','Ganymede','Europa','Titan','Io','Ceres','Eris'];
+let bintang = [], planet = [];
+
+function ukuranLayar() {
+  cv.width = window.innerWidth;
+  cv.height = window.innerHeight;
+}
+window.addEventListener('resize', ukuranLayar);
+ukuranLayar();
+
+function buatLatar(n) {
+  const r = rng(n * 131 + 7);
+  bintang = Array.from({ length:120 }, () => ({ x:r(), y:r(), s:r() * 1.6 + 0.3, k:r() * 6 }));
+  planet = Array.from({ length:3 }, () => ({
+    nama: NAMA_PLANET[Math.floor(r() * NAMA_PLANET.length)],
+    x: r(), y: r(), r: 8 + r() * 26,
+    vx: (r() - 0.5) * 0.0004, vy: (r() - 0.5) * 0.0003,
+    h: Math.floor(r() * 360)
+  }));
+}
+buatLatar(1);
+
+function gambarLatar(t) {
+  gx.fillStyle = '#05060f';
+  gx.fillRect(0, 0, cv.width, cv.height);
+  for (const b of bintang) {
+    gx.globalAlpha = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t / 800 + b.k));
+    gx.fillStyle = '#ffffff';
+    gx.fillRect(b.x * cv.width, b.y * cv.height, b.s, b.s);
+  }
+  gx.globalAlpha = 1;
+  for (const p of planet) {
+    p.x = (p.x + p.vx + 1) % 1;
+    p.y = (p.y + p.vy + 1) % 1;
+    const px = p.x * cv.width, py = p.y * cv.height;
+    const grd = gx.createRadialGradient(px - p.r * 0.3, py - p.r * 0.3, p.r * 0.2, px, py, p.r);
+    grd.addColorStop(0, `hsl(${p.h},70%,75%)`);
+    grd.addColorStop(1, `hsl(${p.h},60%,30%)`);
+    gx.fillStyle = grd;
+    gx.beginPath(); gx.arc(px, py, p.r, 0, Math.PI * 2); gx.fill();
+    gx.fillStyle = 'rgba(255,255,255,.85)';
+    gx.font = '12px system-ui';
+    gx.fillText(p.nama, px + p.r + 4, py + 4);
+  }
+}
+
+function loop(t) {
+  gambarLatar(t);
+  requestAnimationFrame(loop);
+}
+
+// ===== MUSIK DAN SUARA (dibuat dengan kode, bukan rekaman) =====
+// Browser hanya mengizinkan suara setelah ada sentuhan pertama.
+// Karena itu musik mulai pada sentuhan pertama di mana pun di layar.
+let musikOn = ambil('musik', '1') === '1';
+let ctxAudio = null, master = null, jadwalNext = 0, langkah = 0, timerMusik = null;
+
+const NADA = [262, 294, 330, 392, 440, 523, 587, 659];
+const POLA_MELODI = [0, 2, 4, 2, 5, 4, 2, 1, 0, 2, 3, 4, 2, 0, -1, 0];
+
+function startMusik() {
+  if (ctxAudio) {
+    if (ctxAudio.state === 'suspended' && musikOn) ctxAudio.resume();
+    return;
+  }
+  try {
+    ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctxAudio.createGain();
+    master.gain.value = musikOn ? 0.22 : 0;
+    master.connect(ctxAudio.destination);
+    jadwalNext = ctxAudio.currentTime + 0.1;
+    timerMusik = setInterval(jadwalkanMusik, 150);
+  } catch (e) {
+    ctxAudio = null;
+  }
+}
+
+function jadwalkanMusik() {
+  if (!ctxAudio) return;
+  while (jadwalNext < ctxAudio.currentTime + 0.6) {
+    const idx = POLA_MELODI[langkah % POLA_MELODI.length];
+    if (idx >= 0) nada(NADA[idx], jadwalNext, 0.5, 'sine', 0.25);
+    if (langkah % 8 === 0) {
+      const akor = (Math.floor(langkah / 8) % 2 === 0) ? 131 : 147;   // C3 dan D3 bergantian
+      nada(akor, jadwalNext, 2.0, 'triangle', 0.09);
+    }
+    jadwalNext += 0.25;
+    langkah++;
+  }
+}
+
+function nada(frek, waktu, durasi, tipe, vol) {
+  const o = ctxAudio.createOscillator();
+  const g = ctxAudio.createGain();
+  o.type = tipe;
+  o.frequency.value = frek;
+  g.gain.setValueAtTime(0.0001, waktu);
+  g.gain.exponentialRampToValueAtTime(vol, waktu + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, waktu + durasi);
+  o.connect(g);
+  g.connect(master);
+  o.start(waktu);
+  o.stop(waktu + durasi + 0.05);
+}
+
+// Bunyi singkat untuk benar dan salah
+function bunyiBenar() {
+  if (!ctxAudio || !musikOn) return;
+  const t = ctxAudio.currentTime;
+  [523, 659, 784].forEach((f, i) => nada(f, t + i * 0.09, 0.25, 'triangle', 0.2));
+}
+
+function bunyiSalah() {
+  if (!ctxAudio || !musikOn) return;
+  nada(180, ctxAudio.currentTime, 0.3, 'sawtooth', 0.08);
+}
+
+function gantiMusik() {
+  musikOn = !musikOn;
+  simpan('musik', musikOn ? '1' : '0');
+  document.getElementById('btnMusik').textContent = musikOn ? '🔊' : '🔇';
+  if (master) master.gain.value = musikOn ? 0.22 : 0;
+  if (!ctxAudio && musikOn) startMusik();
+}
+
+// Sentuhan atau tombol pertama di mana pun memulai musik
+function sentuhPertama() {
+  startMusik();
+}
+document.addEventListener('pointerdown', sentuhPertama);
+document.addEventListener('keydown', sentuhPertama);
+
+// ===== STATUS PERMAINAN =====
+const app = document.getElementById('app');
+let progres = Number(ambil('progres', '1'));
+let demo = ambil('demo', '0') === '1';
+let sudahIntro = ambil('sudahIntro', '0') === '1';
+let sesi = 1, idxSoal = 0, soalAktif = [], salahSoal = 0, sedangJeda = false;
+
+document.getElementById('btnMusik').textContent = musikOn ? '🔊' : '🔇';
+document.getElementById('btnMusik').onclick = gantiMusik;
+
+// ===== LAYAR PEMBUKA =====
+function tampilIntro() {
+  app.innerHTML = `
+    <div class="kartu">
+      <h1>Teka-Teki Gambar Nusantara</h1>
+      <p>Selamat datang, Penjelajah! Setiap soal berisi gambar dan tulisan yang disusun berderet. Tugasmu membaca gabungannya, lalu menebak kata atau frasa yang tersembunyi di dalamnya.</p>
+      <h2>Contoh</h2>
+      <div class="papan">${render([{e:'🍃'}, {t:'B'}, {e:'🐓'}])}</div>
+      <p class="kecil">🍃 berarti daun, huruf B, dan 🐓 berarti ayam. Jadi jawabannya: <b>daun bayam</b>.</p>
+      <h2>Cara main</h2>
+      <p>1. Perhatikan gambar dan tulisan dengan teliti.<br>
+      2. Tulis jawabanmu, lalu tekan Cek.<br>
+      3. Setiap sesi berisi ${SOAL_PER_SESI} soal. Selesaikan sesi untuk membuka sesi berikutnya.<br>
+      4. Setiap ${BATAS_KISI} kali salah pada satu soal, satu huruf jawaban akan terbuka sebagai kisi-kisi.</p>
+      <p class="kecil">Sesi 1 sampai ${GRATIS} gratis. Sesi ${GRATIS + 1} sampai ${MAKS_SESI} berbayar ${HARGA} per sesi. Versi ini masih demo.</p>
+      <div class="sentuh">🎵 Ketuk layar untuk memulai musik</div>
+      <div class="baris"><button id="mulai">${sudahIntro ? 'Kembali ke menu' : 'Mulai petualangan'}</button></div>
+    </div>`;
+  document.getElementById('mulai').onclick = () => {
+    startMusik();
+    sudahIntro = true;
+    simpan('sudahIntro', '1');
+    tampilMenu();
+  };
+}
+
+// ===== MENU SESI =====
+function tampilMenu() {
+  let grid = '';
+  for (let n = 1; n <= MAKS_SESI; n++) {
+    const kunci = n > progres;
+    const bayar = n > GRATIS && !demo;
+    grid += `<button data-n="${n}" class="${bayar ? 'ungu' : ''}" ${kunci ? 'disabled' : ''}>${n}${bayar ? ' 🔒' : ''}</button>`;
+  }
+  app.innerHTML = `
+    <div class="kartu">
+      <h1>Pilih Sesi</h1>
+      <p class="kecil">Sesi terbuka: ${progres} dari ${MAKS_SESI}. Sesi ${GRATIS + 1} ke atas berbayar ${HARGA}.</p>
+      <div class="baris">
+        <button class="sekunder" id="btnCara">Cara main</button>
+      </div>
+      <div id="grid">${grid}</div>
+    </div>`;
+  app.querySelectorAll('#grid button').forEach(b => {
+    b.onclick = () => pilihSesi(Number(b.dataset.n));
+  });
+  document.getElementById('btnCara').onclick = tampilIntro;
+}
+
+// ===== PILIH DAN MULAI SESI =====
+function pilihSesi(n) {
+  startMusik();
+  if (n > GRATIS && !demo) {
+    const ok = confirm(`Sesi ${n} berbayar ${HARGA}.\n\nIni versi DEMO: tekan OK untuk membuka tanpa membayar.`);
+    if (!ok) return;
+    demo = true;
+    simpan('demo', '1');
+  }
+  mulaiSesi(n);
+}
+
+function mulaiSesi(n) {
+  sesi = n;
+  idxSoal = 0;
+  soalAktif = pilihSoal(n);
+  buatLatar(n);
+  tampilSoal();
+}
+
+// ===== SOAL =====
+function tampilSoal() {
+  salahSoal = 0;
+  sedangJeda = false;
+  const s = soalAktif[idxSoal];
+  app.innerHTML = `
+    <div class="kartu">
+      <div class="kecil">Sesi ${sesi} · Soal ${idxSoal + 1} dari ${SOAL_PER_SESI}</div>
+      <div class="papan">${render(s.p)}</div>
+      <input id="jawab" placeholder="isi jawaban" autocomplete="off" autocapitalize="off">
+      <div class="baris">
+        <button id="cek">Cek</button>
+        <button class="sekunder" id="menu">Menu</button>
+      </div>
+      <div id="pesan"></div>
+      <div id="kisi"></div>
+    </div>`;
+  const inp = document.getElementById('jawab');
+  inp.focus();
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') periksa(); });
+  document.getElementById('cek').onclick = periksa;
+  document.getElementById('menu').onclick = tampilMenu;
+}
+
+function periksa() {
+  if (sedangJeda) return;
+  const inp = document.getElementById('jawab');
+  const pesan = document.getElementById('pesan');
+  const tebakan = inp.value;
+  if (!tebakan.trim()) return;
+
+  const s = soalAktif[idxSoal];
+  if (s.ans.some(a => cocok(tebakan, a))) {
+    sedangJeda = true;
+    bunyiBenar();
+    pesan.className = 'benar';
+    pesan.textContent = 'Benar!';
+    setTimeout(() => {
+      idxSoal++;
+      if (idxSoal >= SOAL_PER_SESI) sesiSelesai(); else tampilSoal();
+    }, 900);
+    return;
+  }
+
+  salahSoal++;
+  bunyiSalah();
+  pesan.className = 'salah';
+  pesan.textContent = 'Belum tepat. Coba lagi ya.';
+  inp.value = '';
+  inp.focus();
+  if (salahSoal >= BATAS_KISI) tampilKisi(s);
+}
+
+function tampilKisi(s) {
+  const k = polaKisi(s, salahSoal);
+  document.getElementById('kisi').innerHTML = `
+    <div class="kisi">
+      <b>Kisi-kisi</b> (salah ${salahSoal} kali)<br>
+      Kategori: ${k.kat}<br>
+      Jumlah kata: ${k.jumlahKata} (${k.panjang})<br>
+      Huruf terbuka: ${k.terbuka} dari ${k.totalHuruf}<br>
+      <div class="pola">${k.pola}</div>
+    </div>`;
+}
+
+function sesiSelesai() {
+  if (sesi === progres && progres < MAKS_SESI) {
+    progres++;
+    simpan('progres', String(progres));
+  }
+  const lanjut = sesi + 1;
+  app.innerHTML = `
+    <div class="kartu">
+      <h1>Sesi ${sesi} selesai!</h1>
+      <p>Hebat, kamu sudah menjawab ${SOAL_PER_SESI} soal dengan benar.</p>
+      <div class="baris">
+        ${lanjut <= MAKS_SESI ? `<button id="lanjut">Lanjut ke sesi ${lanjut}</button>` : ''}
+        <button class="sekunder" id="menu">Menu</button>
+      </div>
+    </div>`;
+  const btn = document.getElementById('lanjut');
+  if (btn) btn.onclick = () => pilihSesi(lanjut);
+  document.getElementById('menu').onclick = tampilMenu;
+}
+
+// ===== MULAI APLIKASI =====
+if (sudahIntro) tampilMenu(); else tampilIntro();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
