@@ -4,8 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>Teka-Teki Gambar Nusantara</title>
-  <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#05060f">
 <style>
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html, body { margin:0; height:100%; background:#05060f; color:#fff; font-family:system-ui, sans-serif; }
@@ -450,7 +448,7 @@ function tampilIntro() {
       2. Tulis jawabanmu, lalu tekan Cek.<br>
       3. Setiap sesi berisi ${SOAL_PER_SESI} soal. Selesaikan sesi untuk membuka sesi berikutnya.<br>
       4. Setiap ${BATAS_KISI} kali salah pada satu soal, satu huruf jawaban akan terbuka sebagai kisi-kisi.</p>
-      <p class="kecil">Sesi 1 sampai ${GRATIS} gratis. Sesi ${GRATIS + 1} sampai ${MAKS_SESI} berbayar ${HARGA} per sesi. Versi ini masih demo.</p>
+      <p class="kecil">Semua 500 sesi terbuka setelah kamu membeli aplikasi ini.</p>
       <div class="sentuh">🎵 Ketuk layar untuk memulai musik</div>
       <div class="baris"><button id="mulai">${sudahIntro ? 'Kembali ke menu' : 'Mulai petualangan'}</button></div>
     </div>`;
@@ -473,7 +471,7 @@ function tampilMenu() {
   app.innerHTML = `
     <div class="kartu">
       <h1>Pilih Sesi</h1>
-      <p class="kecil">Sesi terbuka: ${progres} dari ${MAKS_SESI}. Sesi ${GRATIS + 1} ke atas berbayar ${HARGA}.</p>
+      <p class="kecil">Sesi terbuka: ${progres} dari ${MAKS_SESI}.</p>
       <div class="baris">
         <button class="sekunder" id="btnCara">Cara main</button>
       </div>
@@ -488,12 +486,6 @@ function tampilMenu() {
 // ===== PILIH DAN MULAI SESI =====
 function pilihSesi(n) {
   startMusik();
-  if (n > GRATIS && !demo) {
-    const ok = confirm(`Sesi ${n} berbayar ${HARGA}.\n\nIni versi DEMO: tekan OK untuk membuka tanpa membayar.`);
-    if (!ok) return;
-    demo = true;
-    simpan('demo', '1');
-  }
   mulaiSesi(n);
 }
 
@@ -593,6 +585,9 @@ function sesiSelesai() {
 // ===== MULAI APLIKASI =====
 if (sudahIntro) tampilMenu(); else tampilIntro();
 requestAnimationFrame(loop);
+</script>
+<script>
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
 </body>
 </html>
