@@ -1,6 +1,6 @@
 // Service worker untuk Teka-Teki Gambar Nusantara
 // Ganti VERSI setiap kali isi game diperbarui, misalnya teka-v2
-const VERSI = 'teka-v1';
+const VERSI = 'teka-v2';
 const BERKAS = [
   './',
   './index.html',
